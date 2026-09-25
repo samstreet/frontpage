@@ -1,0 +1,16 @@
+{{define "chat"}}
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light"><title>Ask the archive · Home News</title><link rel="stylesheet" href="/static/site.css"><script defer src="/static/app.js"></script></head>
+<body><a class="skip-link" href="#main">Skip to chat</a><header class="masthead"><div class="masthead-top"><a class="wordmark" href="/">Home <span>News</span></a><span class="masthead-note">A local newspaper, made from your sources</span><a class="status-link" href="/status">System status <span class="status-dot" aria-hidden="true"></span></a></div><nav class="site-nav" aria-label="Main navigation"><a href="/">Today</a><a href="/archive">Archive</a><a class="active" aria-current="page" href="/chat">Ask the archive</a><a href="/status">Sources &amp; status</a></nav></header>
+<main id="main" class="page-shell"><div class="page-title"><p class="eyebrow">A conversation with your library</p><h1>Ask the archive</h1><p>Ask about stories collected by Home News. Answers are grounded in saved articles and include source links.</p></div>
+  <section class="chat-shell" data-chat data-endpoint="/api/v1/chat" data-delete-endpoint="/api/v1/chat/" data-conversation-id="{{.ConversationID}}">
+    <div class="chat-topline"><span class="local-badge"><span class="status-dot" aria-hidden="true"></span> Local archive</span><button class="text-button" type="button" data-clear-chat>Clear conversation</button></div>
+    <div class="chat-messages" data-chat-messages aria-live="polite" aria-relevant="additions text">
+      <article class="message assistant-message"><span class="message-label">Home News</span><p>What would you like to know about the stories in your archive?</p><p class="message-hint">Try: “What are the main developments in science this week?”</p></article>
+      {{range .Messages}}<article class="message {{.RoleClass}}"><span class="message-label">{{.RoleLabel}}</span><p>{{.Text}}</p>{{if .Sources}}<ul class="citation-list" aria-label="Sources cited">{{range .Sources}}<li><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Headline}} <span>· {{.SourceName}} ↗</span></a></li>{{end}}</ul>{{end}}</article>{{end}}
+    </div>
+    <form class="chat-compose" data-chat-form><label class="visually-hidden" for="chat-question">Your question</label><textarea id="chat-question" name="message" rows="2" maxlength="4000" placeholder="Ask about the news you've collected…" required></textarea><div class="compose-bottom"><p>Answers use saved feed content and may not cover every detail.</p><button class="button" type="submit"><span>Ask</span><span aria-hidden="true">↑</span></button></div></form>
+    <p class="chat-feedback" data-chat-feedback role="status" aria-live="polite"></p>
+  </section>
+  <footer class="page-footer"><p>Chat history is stored locally and retained according to your configured policy.</p><a href="/archive">Search the story archive <span aria-hidden="true">→</span></a></footer></main></body></html>
+{{end}}

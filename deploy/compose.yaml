@@ -1,0 +1,65 @@
+name: home-news
+
+services:
+  home-news:
+    image: ${HOME_NEWS_IMAGE:-ghcr.io/OWNER/REPOSITORY:latest}
+    container_name: home-news
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      APP_ADDR: ":8080"
+      APP_DATA_DIR: /data
+      APP_CONFIG_FILE: /config/feeds.yaml
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/London}
+      APP_POLL_INTERVAL: ${APP_POLL_INTERVAL:-30m}
+      APP_DAILY_EDITION_TIME: ${APP_DAILY_EDITION_TIME:-06:00}
+      APP_RETENTION_DAYS: ${APP_RETENTION_DAYS:-90}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:4b}
+      OLLAMA_REQUEST_TIMEOUT: ${OLLAMA_REQUEST_TIMEOUT:-5m}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL:-info}
+    ports:
+      - "${HOME_NEWS_LAN_IP:-192.168.1.69}:${HOME_NEWS_PORT:-8091}:8080"
+    volumes:
+      - home_news_data:/data
+      - ../config/feeds.yaml:/config/feeds.yaml:ro
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - home-news
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-T", "2", "-O", "/dev/null", "http://127.0.0.1:8080/api/v1/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: home-news-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - home-news
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  home_news_data:
+  ollama_models:
+
+networks:
+  home-news:
+    driver: bridge

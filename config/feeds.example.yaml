@@ -1,0 +1,25 @@
+feeds:
+  - id: bbc-world
+    name: BBC World
+    url: https://feeds.bbci.co.uk/news/world/rss.xml
+    topics: [world]
+    enabled: true
+  - id: nasa
+    name: NASA
+    url: https://www.nasa.gov/news-release/feed/
+    topics: [science, space]
+    enabled: true
+
+interests:
+  - id: world
+    name: World news
+    description: Major international developments and their context.
+    keywords: [election, conflict, diplomacy, policy]
+  - id: science
+    name: Science and space
+    description: Spaceflight, astronomy, climate science, and major discoveries.
+    keywords: [NASA, astronomy, spaceflight, climate science]
+  - id: space
+    name: Space
+    description: Space exploration, astronomy, and missions.
+    keywords: [space, spacecraft, telescope, moon, Mars]

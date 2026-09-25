@@ -1,0 +1,59 @@
+{{define "home"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>{{if .Edition}}{{.Edition.LeadHeadline}} · Home News{{else}}Home News · The daily briefing{{end}}</title>
+  <link rel="stylesheet" href="/static/site.css">
+  <script defer src="/static/app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to the newspaper</a>
+  <header class="masthead">
+    <div class="masthead-top"><a class="wordmark" href="/">Home <span>News</span></a><span class="masthead-note">A local newspaper, made from your sources</span><a class="status-link" href="/status">System status <span class="status-dot" aria-hidden="true"></span></a></div>
+    <nav class="site-nav" aria-label="Main navigation"><a class="active" aria-current="page" href="/">Today</a><a href="/archive">Archive</a><a href="/chat">Ask the archive</a><a href="/status">Sources &amp; status</a></nav>
+  </header>
+  <main id="main" class="page-shell">
+    {{if .Edition}}
+    <div class="edition-line"><span class="eyebrow">The daily edition</span><time>{{.Edition.IssueDate}}</time><span class="edition-stamp">AI-generated from linked sources</span></div>
+    <section class="lead-story" aria-labelledby="lead-title">
+      <div class="lead-copy"><p class="kicker">{{.Edition.LeadKicker}}</p><h1 id="lead-title">{{.Edition.LeadHeadline}}</h1><p class="lead-summary">{{.Edition.LeadSummary}}</p>
+        {{if .Edition.LeadSources}}<p class="source-line">Reporting from {{range $i, $source := .Edition.LeadSources}}{{if $i}} · {{end}}<a href="{{$source.URL}}" target="_blank" rel="noopener noreferrer">{{$source.Name}}</a>{{end}}</p>{{end}}
+      </div>
+      <aside class="edition-aside"><span class="aside-number">01</span><p>{{.Edition.Intro}}</p><a class="text-link" href="/archive">Browse past editions <span aria-hidden="true">→</span></a></aside>
+    </section>
+    {{if .Edition.StatusMessage}}<p class="notice" role="status">{{.Edition.StatusMessage}}</p>{{end}}
+    <div class="section-heading"><div><span class="eyebrow">In this edition</span><h2>Today's briefing</h2></div><span class="muted">{{.Edition.StoryCount}} stories · Updated {{.Edition.GeneratedAt}}</span></div>
+    <div class="edition-sections">
+      {{range .Edition.Sections}}
+      <section class="topic-section"><div class="topic-heading"><h2>{{.Name}}</h2><span>{{.StoryCount}} stories</span></div>
+        {{if .Narrative}}<p class="section-narrative">{{.Narrative}}</p>{{end}}
+        <div class="story-grid">{{range .Stories}}{{template "story-card" .}}{{end}}</div>
+      </section>
+      {{end}}
+    </div>
+    {{if .Edition.OtherStories}}
+    <section class="other-section"><div class="topic-heading"><h2>Also in the news</h2><span>{{len .Edition.OtherStories}} stories</span></div><div class="story-grid">{{range .Edition.OtherStories}}{{template "story-card" .}}{{end}}</div></section>
+    {{end}}
+    {{else}}
+    <div class="edition-line"><span class="eyebrow">The daily edition</span><time>{{.Today}}</time><span class="edition-stamp">AI-generated from linked sources</span></div>
+    <section class="empty-edition"><span class="empty-mark" aria-hidden="true">HN</span><p class="eyebrow">Your front page is being prepared</p><h1>The day's stories are on their way.</h1><p>{{.EmptyMessage}}</p><a class="button-link" href="/status">Check collection status</a></section>
+    {{end}}
+    <footer class="page-footer"><p>Home News is a locally hosted briefing. Summaries are AI-generated from feed content; follow the source links for original reporting.</p><a href="/archive">All editions and stories <span aria-hidden="true">→</span></a></footer>
+  </main>
+</body>
+</html>
+{{end}}
+
+{{define "story-card"}}
+<article class="story-card">
+  <div class="story-meta"><span>{{.SourceName}}</span>{{if .PublishedAt}}<time>{{.PublishedAt}}</time>{{end}}</div>
+  <h3><a href="{{.URL}}" target="_blank" rel="noopener noreferrer">{{.Headline}}</a></h3>
+  <p>{{.Summary}}</p>
+  {{if .WhyItMatters}}<p class="why-matters"><span>Why it matters</span> {{.WhyItMatters}}</p>{{end}}
+  {{if .Topics}}<ul class="tag-list" aria-label="Topics">{{range .Topics}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  <a class="story-source" href="{{.URL}}" target="_blank" rel="noopener noreferrer">Read at {{.SourceName}} <span aria-hidden="true">↗</span></a>
+</article>
+{{end}}

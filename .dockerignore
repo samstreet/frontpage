@@ -1,0 +1,12 @@
+.git
+.github
+.env
+.env.*
+config/feeds.yaml
+data
+*.db
+*.db-shm
+*.db-wal
+ollama
+downloads
+tmp

@@ -1,0 +1,5 @@
+.env
+config/feeds.yaml
+*.db
+*.db-shm
+*.db-wal
