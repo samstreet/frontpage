@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const PromptVersion = "v1"
+const PromptVersion = "v2"
 
 type Client struct {
 	baseURL, model string
