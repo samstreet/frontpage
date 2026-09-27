@@ -44,14 +44,16 @@ func (c *Client) Available(ctx context.Context) bool {
 }
 
 type message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role     string `json:"role"`
+	Content  string `json:"content"`
+	Thinking string `json:"thinking,omitempty"`
 }
 type chatRequest struct {
 	Model    string         `json:"model"`
 	Messages []message      `json:"messages"`
 	Stream   bool           `json:"stream"`
 	Format   any            `json:"format,omitempty"`
+	Think    *bool          `json:"think,omitempty"`
 	Options  map[string]any `json:"options,omitempty"`
 }
 type chatResponse struct {
@@ -99,7 +101,8 @@ func (c *Client) GenerateText(ctx context.Context, system, user string) (string,
 	return c.call(ctx, system, user)
 }
 func (c *Client) call(ctx context.Context, system, user string) (string, error) {
-	body := chatRequest{Model: c.model, Messages: []message{{Role: "system", Content: system}, {Role: "user", Content: user}}, Stream: false, Format: "json", Options: map[string]any{"temperature": 0.2, "num_ctx": 4096, "num_predict": 700}}
+	think := false
+	body := chatRequest{Model: c.model, Messages: []message{{Role: "system", Content: system}, {Role: "user", Content: user}}, Stream: false, Format: "json", Think: &think, Options: map[string]any{"temperature": 0.2, "num_ctx": 4096, "num_predict": 1000}}
 	b, err := json.Marshal(body)
 	if err != nil {
 		return "", err
@@ -123,6 +126,9 @@ func (c *Client) call(ctx context.Context, system, user string) (string, error) 
 	}
 	if result.Error != "" {
 		return "", errors.New(result.Error)
+	}
+	if strings.TrimSpace(result.Message.Content) == "" && strings.TrimSpace(result.Message.Thinking) != "" {
+		return "", errors.New("ollama returned reasoning without a final response")
 	}
 	if strings.TrimSpace(result.Message.Content) == "" {
 		return "", errors.New("ollama returned an empty response")

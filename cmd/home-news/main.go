@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -72,20 +73,30 @@ func run() error {
 			cancel()
 		}
 	}()
-	go pollLoop(ctx, service, cfg, logger)
-	go editionLoop(ctx, service, cfg, logger)
-	go cleanupLoop(ctx, service, logger)
+	var workers sync.WaitGroup
+	workers.Add(3)
+	go func() {
+		defer workers.Done()
+		pollLoop(ctx, service, cfg, logger)
+	}()
+	go func() {
+		defer workers.Done()
+		editionLoop(ctx, service, cfg, logger)
+	}()
+	go func() {
+		defer workers.Done()
+		cleanupLoop(ctx, service, logger)
+	}()
 	<-ctx.Done()
 	shutdown, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
-	if err := server.Shutdown(shutdown); err != nil {
-		return err
-	}
+	shutdownErr := server.Shutdown(shutdown)
+	workers.Wait()
 	select {
 	case err := <-serverErr:
 		return err
 	default:
-		return nil
+		return shutdownErr
 	}
 }
 

@@ -81,6 +81,17 @@ func (s *Server) home(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	data := s.homeData(edition)
+	if edition == nil {
+		date := time.Now().In(s.service.Config().Location).Format("2006-01-02")
+		if latest, err := s.service.Edition(r.Context(), date); err == nil {
+			switch latest.Status {
+			case "empty":
+				data.EmptyMessage = "Feeds have been collected, but there are not enough summarized stories to prepare today's newspaper yet. Check Sources & status for the collection and summary queue."
+			case "failed":
+				data.EmptyMessage = "Today's edition could not be generated. Check Sources & status and the Home News logs, then try again."
+			}
+		}
+	}
 	s.render(w, "home", data)
 }
 func (s *Server) editionPage(w http.ResponseWriter, r *http.Request) {
@@ -328,7 +339,16 @@ func (s *Server) statusPage(w http.ResponseWriter, r *http.Request) {
 	d.Collection.NextPoll = "within " + cfg.PollInterval.String()
 	d.Edition.StateLabel = "Not generated"
 	if status.LastEditionDate != "" {
-		d.Edition.StateLabel = status.EditionStatus
+		switch status.EditionStatus {
+		case "ready":
+			d.Edition.StateLabel = "Ready"
+		case "empty":
+			d.Edition.StateLabel = "Waiting for summarized stories"
+		case "failed":
+			d.Edition.StateLabel = "Generation failed"
+		default:
+			d.Edition.StateLabel = status.EditionStatus
+		}
 		d.Edition.GeneratedAt = status.LastEditionDate
 	}
 	for _, f := range status.Feeds {
@@ -469,6 +489,19 @@ func (s *Server) apiGenerateEdition(w http.ResponseWriter, r *http.Request) {
 	if err := s.service.GenerateEdition(r.Context(), true); err != nil {
 		s.log.Warn("manual edition generation failed", "error", err)
 		writeJSON(w, 503, map[string]string{"error": "The edition could not be generated."})
+		return
+	}
+	date := time.Now().In(s.service.Config().Location).Format("2006-01-02")
+	edition, err := s.service.Edition(r.Context(), date)
+	if err != nil {
+		s.serverError(w, err)
+		return
+	}
+	if edition.Status != "ready" {
+		writeJSON(w, 200, map[string]string{
+			"status":  "insufficient_stories",
+			"message": "Feeds may be collected, but there are not enough successfully summarized stories to build a newspaper yet.",
+		})
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ready"})
