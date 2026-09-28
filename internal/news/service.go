@@ -259,20 +259,12 @@ func (s *Service) GenerateEdition(ctx context.Context, force bool) error {
 	}
 	doc.LeadHeadline = truncateRunes(doc.LeadHeadline, 180)
 	doc.Lead.Text = truncateRunes(doc.Lead.Text, 800)
-	used := map[string]bool{}
-	for _, id := range doc.Lead.StoryIDs {
-		used[id] = true
-	}
-	for _, sec := range doc.Sections {
-		for _, id := range sec.StoryIDs {
-			used[id] = true
-		}
-	}
-	editionStories := make([]domain.Story, 0, len(used))
+	// Preserve every selected story in the edition. The model may cite only a
+	// subset in its lead and sections; the renderer presents the rest as
+	// standalone "Also in the news" cards using their validated story summaries.
+	editionStories := make([]domain.Story, 0, len(selected))
 	for _, st := range selected {
-		if used[st.ID] {
-			editionStories = append(editionStories, st)
-		}
+		editionStories = append(editionStories, st)
 	}
 	return s.db.SaveEdition(ctx, date, s.model.Model(), llm.PromptVersion, doc, editionStories, "ready")
 }

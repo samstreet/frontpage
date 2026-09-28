@@ -142,6 +142,9 @@ func (s *Server) homeData(ed *domain.Edition) HomePageData {
 	}
 	v.LeadSources = sourceLinks(ed.Document.Lead.StoryIDs, lookup)
 	used := map[string]bool{}
+	for _, id := range ed.Document.Lead.StoryIDs {
+		used[id] = true
+	}
 	for _, sec := range ed.Document.Sections {
 		sv := SectionView{Name: topicName(s.service.Config().Source.Interests, sec.Topic), Narrative: paragraphText(sec.Paragraphs), StoryCount: len(sec.StoryIDs)}
 		sectionSeen := map[string]bool{}
