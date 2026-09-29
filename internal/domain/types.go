@@ -20,6 +20,7 @@ type Interest struct {
 type SourceConfig struct {
 	Feeds     []Feed     `yaml:"feeds" json:"feeds"`
 	Interests []Interest `yaml:"interests" json:"interests"`
+	Events    []Event    `yaml:"events" json:"events"`
 }
 
 type Story struct {
@@ -68,6 +69,7 @@ type EditionDocument struct {
 	LeadHeadline string           `json:"lead_headline"`
 	Lead         EditionParagraph `json:"lead"`
 	Sections     []EditionSection `json:"sections"`
+	Events       []EditionEvent   `json:"events,omitempty"`
 }
 
 type Edition struct {

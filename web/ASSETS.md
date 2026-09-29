@@ -32,6 +32,7 @@ EditionView {
     Stories []StoryCardView
   }
   OtherStories []StoryCardView
+  Events []EditionEvent { Name, Type, Description, Milestone string }
 }
 ```
 

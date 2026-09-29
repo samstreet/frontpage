@@ -23,3 +23,19 @@ interests:
     name: Space
     description: Space exploration, astronomy, and missions.
     keywords: [space, spacecraft, telescope, moon, Mars]
+
+# Occasions appear in the edition for their date, using APP_TIMEZONE.
+# Replace [] with your own list. Examples below are commented out.
+events: []
+#  - name: "Alex's birthday"
+#    type: birthday
+#    date: "1990-05-14"  # Repeats yearly; shows the age using the original year.
+#    description: "Happy birthday, Alex!"
+#  - name: "Our wedding anniversary"
+#    type: anniversary
+#    date: "2012-08-23"
+#  - name: "Family day"
+#    date: "07-12"       # Month and day only; no age or year count.
+#  - name: "Graduation celebration"
+#    date: "2027-07-10"
+#    repeat: once        # Default is yearly.

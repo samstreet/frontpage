@@ -187,10 +187,26 @@ type editionModelOutput struct {
 func (s *Service) GenerateEdition(ctx context.Context, force bool) error {
 	s.editionMu.Lock()
 	defer s.editionMu.Unlock()
-	date := time.Now().In(s.cfg.Location).Format("2006-01-02")
+	day := time.Now().In(s.cfg.Location)
+	date := day.Format("2006-01-02")
+	var published *domain.Edition
 	if !force {
+		// An edition containing only occasions can gain news on a later poll.
 		if existing, err := s.db.GetEdition(ctx, date); err == nil && existing.Status == "ready" {
-			return nil
+			if len(existing.Stories) > 0 {
+				return nil
+			}
+			published = &existing
+		}
+	}
+	var events []domain.EditionEvent
+	if published != nil {
+		events = published.Document.Events
+	} else {
+		for _, event := range s.cfg.Source.Events {
+			if item, ok := event.On(day); ok {
+				events = append(events, item)
+			}
 		}
 	}
 	stories, err := s.db.ListStories(ctx, "", "", 50, 0)
@@ -210,7 +226,15 @@ func (s *Service) GenerateEdition(ctx context.Context, force bool) error {
 		}
 	}
 	if len(selected) == 0 {
-		doc := domain.EditionDocument{}
+		if published != nil {
+			return nil
+		}
+		doc := domain.EditionDocument{Events: events}
+		if len(events) > 0 {
+			doc.LeadHeadline = "A day to celebrate"
+			doc.Lead.Text = "Today's occasions from your personal calendar."
+			return s.db.SaveEdition(ctx, date, s.model.Model(), llm.PromptVersion, doc, nil, "ready")
+		}
 		return s.db.SaveEdition(ctx, date, s.model.Model(), llm.PromptVersion, doc, nil, "empty")
 	}
 	allowed := map[string]bool{}
@@ -228,7 +252,7 @@ func (s *Service) GenerateEdition(ctx context.Context, force bool) error {
 		s.db.SetEditionError(ctx, date, err.Error())
 		return err
 	}
-	doc := domain.EditionDocument{LeadHeadline: strings.TrimSpace(out.LeadHeadline), Lead: domain.EditionParagraph{Text: strings.TrimSpace(out.Lead.Text), StoryIDs: validIDs(out.Lead.StoryIDs, allowed)}}
+	doc := domain.EditionDocument{LeadHeadline: strings.TrimSpace(out.LeadHeadline), Lead: domain.EditionParagraph{Text: strings.TrimSpace(out.Lead.Text), StoryIDs: validIDs(out.Lead.StoryIDs, allowed)}, Events: events}
 	for _, section := range out.Sections {
 		if !s.configuredTopic(section.Topic) {
 			continue

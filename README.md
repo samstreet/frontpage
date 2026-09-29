@@ -71,6 +71,40 @@ docker compose -f deploy/compose.yaml restart home-news
 
 The application stores its database in the `home_news_data` volume. Ollama stores downloaded models in `ollama_models`. Both survive container recreation.
 
+### Birthdays, anniversaries, and other occasions
+
+Add an optional top-level `events` list to `config/feeds.yaml`, alongside `feeds` and `interests`:
+
+```yaml
+events:
+  - name: "Alex's birthday"
+    type: birthday
+    date: "1990-05-14"
+    description: "Happy birthday, Alex!"
+  - name: "Our wedding anniversary"
+    type: anniversary
+    date: "2012-08-23"
+  - name: "Family day"
+    date: "07-12"
+  - name: "Graduation celebration"
+    date: "2027-07-10"
+    repeat: once
+```
+
+Events appear in **Occasions & celebrations** when their month and day match the edition's date in `APP_TIMEZONE`, in configuration order. They repeat yearly by default (`repeat: yearly`); use `repeat: once` with a full date for a one-off occasion. `type` can be `birthday`, `anniversary`, or `event` (the default), and `description` is optional.
+
+Use a quoted `YYYY-MM-DD` date with the original birth or anniversary year to show a milestone such as “Turns 36 today” or “14 years today”. Use quoted `MM-DD` to omit the year and milestone. Events never appear before their original year. February 29 events appear only on February 29 in leap years. Invalid dates or event types prevent startup with a configuration error identifying the entry.
+
+Events are added directly from your configuration without an Ollama request and saved with the edition, so archived editions keep their original notices and milestones. An edition can contain just occasions while waiting for summarized news; later polls can add news to it. Existing editions without events continue to work.
+
+After editing the configuration, restart `home-news`. The next newly generated edition uses the changes. To update an edition already generated for today, call the regeneration endpoint after restarting (adjust the address to match your server):
+
+```sh
+curl -X POST http://192.168.1.69:8091/api/v1/admin/edition
+```
+
+Use `events: []` to leave the section disabled.
+
 ## Operations
 
 View status and logs:

@@ -124,6 +124,7 @@ type EditionView struct {
 	LeadSources                                                                         []SourceLink
 	Sections                                                                            []SectionView
 	OtherStories                                                                        []StoryCardView
+	Events                                                                              []domain.EditionEvent
 }
 type HomePageData struct {
 	Today, EmptyMessage string
@@ -136,6 +137,11 @@ func (s *Server) homeData(ed *domain.Edition) HomePageData {
 		return out
 	}
 	v := &EditionView{IssueDate: ed.Date, LeadKicker: "The daily briefing", LeadHeadline: ed.Document.LeadHeadline, LeadSummary: ed.Document.Lead.Text, Intro: "A concise briefing built from the stories in your selected feeds.", GeneratedAt: ed.GeneratedAt.In(s.service.Config().Location).Format("15:04 MST"), StoryCount: len(ed.Stories)}
+	v.Events = ed.Document.Events
+	if len(ed.Stories) == 0 && len(v.Events) > 0 {
+		v.LeadKicker = "Your personal calendar"
+		v.Intro = "Birthdays, anniversaries, and dates worth remembering."
+	}
 	lookup := map[string]domain.Story{}
 	for _, st := range ed.Stories {
 		lookup[st.ID] = st

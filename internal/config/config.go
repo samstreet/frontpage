@@ -129,6 +129,11 @@ func (c Config) Validate() error {
 	if ollamaURL.User != nil || (ollamaURL.Path != "" && ollamaURL.Path != "/") {
 		return errors.New("OLLAMA_BASE_URL must not contain credentials or a path")
 	}
+	for i, event := range c.Source.Events {
+		if err := event.Validate(); err != nil {
+			return fmt.Errorf("events[%d] (%s): %w", i, event.Name, err)
+		}
+	}
 	seen := map[string]bool{}
 	interestIDs := map[string]bool{}
 	for _, interest := range c.Source.Interests {
