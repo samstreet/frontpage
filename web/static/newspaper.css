@@ -1,0 +1,384 @@
+/* The printed page is the source of truth. Every measurement below is in
+   millimetres against A4, and the screen simply scales a real sheet down to
+   fit, so what you read is what comes out of the printer. */
+
+:root {
+  --sheet-width: 210mm;
+  --sheet-height: 297mm;
+  --sheet-margin-x: 12mm;
+  --sheet-margin-top: 11mm;
+  --sheet-margin-bottom: 13mm;
+  --columns: 4;
+  --column-gap: 5mm;
+  --sheet-scale: 1;
+
+  --ink: #17171a;
+  --ink-soft: #3d3d42;
+  --ink-faint: #6f6c66;
+  --newsprint: #faf8f2;
+  --rule: #bdb7a9;
+  --rule-strong: #17171a;
+  --accent-ink: #7d2c1c;
+
+  --text-face: "Times New Roman", Times, "Liberation Serif", Georgia, serif;
+  --display-face: "Times New Roman", Times, "Liberation Serif", Georgia, serif;
+  --label-face: Helvetica, "Helvetica Neue", Arial, "Liberation Sans", sans-serif;
+}
+
+body.paper {
+  margin: 0;
+  background: #e7e3d8;
+  color: var(--ink);
+  font-family: var(--text-face);
+}
+
+/* ---------------------------------------------------------------- pressroom
+   Screen-only chrome. None of it is printed. */
+
+.pressroom {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .75rem 1.25rem;
+  padding: .6rem clamp(.75rem, 3vw, 1.75rem);
+  border-bottom: 1px solid #cdc7b8;
+  background: #f6f3ea;
+  font-family: var(--label-face);
+}
+.pressroom-mark { font: 700 1.15rem/1 var(--display-face); letter-spacing: -.04em; text-decoration: none; color: var(--ink); }
+.pressroom-mark span { color: var(--accent-ink); }
+.pressroom-nav { display: flex; gap: clamp(.7rem, 2vw, 1.6rem); }
+.pressroom-nav a { color: var(--ink-faint); font-size: .76rem; text-decoration: none; }
+.pressroom-nav a:hover, .pressroom-nav a.active { color: var(--accent-ink); }
+.pressroom-nav a.active { font-weight: 700; }
+.pressroom-pager { display: flex; align-items: center; gap: .4rem; margin-left: auto; }
+.pressroom-pager[hidden] { display: none; }
+.pager-step {
+  display: grid; place-items: center;
+  width: 2rem; height: 2rem;
+  border: 1px solid #c6c0b2; background: #fffdf7;
+  color: var(--ink); font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.pager-step:hover:not(:disabled) { background: #efe9dc; }
+.pager-step:disabled { opacity: .35; cursor: default; }
+.pager-label { min-width: 9ch; text-align: center; color: var(--ink-faint); font-size: .74rem; font-variant-numeric: tabular-nums; }
+.pressroom-actions { display: flex; gap: .5rem; }
+.pressroom-button {
+  padding: .45rem .75rem;
+  border: 1px solid #c6c0b2; background: #fffdf7;
+  color: var(--ink); font: 600 .74rem var(--label-face); cursor: pointer;
+}
+.pressroom-button:hover { background: #efe9dc; }
+.pressroom-button.is-primary { border-color: var(--accent-ink); background: var(--accent-ink); color: #fff; }
+.pressroom-button.is-primary:hover { background: #63200f; }
+.pressroom-button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
+
+.issue-nav {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  max-width: 62rem; margin: .75rem auto -.25rem; padding: 0 1rem;
+  color: var(--ink-faint); font: .74rem var(--label-face);
+}
+.issue-nav a { color: var(--accent-ink); text-decoration: none; }
+.issue-nav a:hover { text-decoration: underline; }
+
+/* --------------------------------------------------------------------- press
+   `.copy` holds the unset copy the compositor draws from; `.sheets` holds the
+   composed pages. Without JavaScript the copy stays visible and readable. */
+
+.press { padding: clamp(.75rem, 2.5vw, 2rem) 0 3rem; overflow: hidden; }
+.sheets { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; }
+body[data-composed] .copy { display: none; }
+body:not([data-composed]) .sheets { display: none; }
+/* While the compositor is measuring, the sheets must be laid out and the
+   unset copy out of the way, whatever view the reader is otherwise in. */
+body.is-composing .sheets { display: flex !important; }
+body.is-composing .sheets .sheet-frame { display: block !important; }
+body.is-composing .copy { display: none !important; }
+
+/* Reading view: one plain column, for phones and for anyone who would rather
+   scroll than turn pages. */
+body[data-view="reading"] .sheets { display: none; }
+body[data-view="reading"] .copy { display: block; }
+body[data-view="reading"] .copy {
+  max-width: 38rem;
+  margin: 0 auto;
+  padding: 1.5rem clamp(1rem, 4vw, 2rem) 3rem;
+  background: var(--newsprint);
+}
+body[data-view="reading"] .copy > * { break-inside: auto; }
+body[data-view="reading"] .plate-wide img { aspect-ratio: 3 / 2; }
+/* Nothing is paginated while scrolling, so the contents box drops its page
+   numbers rather than showing a column of dashes. */
+body[data-view="reading"] .inside-page,
+body[data-view="reading"] .inside-rule { display: none; }
+
+/* --------------------------------------------------------------------- sheet */
+
+.sheet-frame {
+  width: calc(var(--sheet-width) * var(--sheet-scale));
+  height: calc(var(--sheet-height) * var(--sheet-scale));
+  flex: 0 0 auto;
+}
+.sheet {
+  position: relative;
+  width: var(--sheet-width);
+  height: var(--sheet-height);
+  padding: var(--sheet-margin-top) var(--sheet-margin-x) var(--sheet-margin-bottom);
+  background: var(--newsprint);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .18), 0 10px 30px rgba(0, 0, 0, .1);
+  transform: scale(var(--sheet-scale));
+  transform-origin: top left;
+  overflow: hidden;
+}
+/* Full-measure furniture: the nameplate, section bands and photographs that
+   run the width of the page rather than sitting in one column. */
+.sheet-body > [data-span="all"] { column-span: all; }
+
+.sheet-body {
+  height: 100%;
+  columns: var(--columns);
+  column-gap: var(--column-gap);
+  column-fill: auto;
+  column-rule: 1px solid var(--rule);
+  overflow: hidden;
+}
+/* The running head and folio sit in the bottom margin, outside the text block. */
+.sheet-folio {
+  position: absolute;
+  left: var(--sheet-margin-x);
+  right: var(--sheet-margin-x);
+  bottom: 4.5mm;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 1.5mm;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font: 6.6pt/1 var(--label-face);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.sheet-folio strong { font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Page one carries the nameplate, so it needs no running head. */
+.sheet[data-page="1"] .sheet-body { height: 100%; }
+
+/* ----------------------------------------------------------------- nameplate */
+
+.nameplate { margin: 0 0 4mm; text-align: center; }
+.nameplate-above,
+.nameplate-below {
+  display: flex;
+  justify-content: space-between;
+  gap: 3mm;
+  margin: 0;
+  padding: 1.4mm 0;
+  color: var(--ink-faint);
+  font: 7pt/1.2 var(--label-face);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.nameplate-above { border-bottom: 1px solid var(--rule); }
+.nameplate-below { border-top: 1px solid var(--rule-strong); border-bottom: 3px double var(--rule-strong); }
+.nameplate-below span:nth-child(2) { text-align: center; }
+.nameplate-above span:last-child, .nameplate-below span:last-child { text-align: right; }
+.nameplate-title {
+  margin: 2.5mm 0 2mm;
+  font: 700 clamp(34pt, 9.5vw, 52pt)/.92 var(--display-face);
+  letter-spacing: -.045em;
+  font-variant: small-caps;
+}
+.nameplate-title em { font-style: normal; color: var(--accent-ink); }
+
+/* ------------------------------------------------------------- inside today */
+
+.inside {
+  margin: 0 0 4mm;
+  padding: 2.5mm 3mm;
+  border: 1px solid var(--rule);
+  background: #f4f0e5;
+}
+.inside-title { margin: 0 0 1.5mm; font: 700 9pt/1 var(--label-face); letter-spacing: .12em; text-transform: uppercase; }
+.inside-intro { margin: 0 0 2mm; color: var(--ink-soft); font: italic 8.6pt/1.35 var(--text-face); }
+.inside-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8mm 6mm; margin: 0; padding: 0; list-style: none; }
+.inside-list li { display: flex; align-items: baseline; gap: 1.5mm; font: 8.4pt/1.5 var(--text-face); }
+.inside-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.inside-tally { flex: 0 0 auto; color: var(--ink-faint); font: 7pt var(--label-face); }
+.inside-rule { flex: 1 1 auto; height: 0; border-bottom: 1px dotted var(--rule); }
+/* Reserved width, so filling in page numbers after composition cannot reflow
+   page one and invalidate those very numbers. */
+.inside-page { flex: 0 0 auto; min-width: 2.4ch; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.inside-count { margin: 2mm 0 0; padding-top: 1.5mm; border-top: 1px solid var(--rule); color: var(--ink-faint); font: 7.2pt/1.3 var(--label-face); letter-spacing: .05em; text-transform: uppercase; }
+
+/* -------------------------------------------------------------------- bands */
+
+.band { display: flex; align-items: center; gap: 3mm; margin: 4mm 0 2.5mm; }
+.band:first-child { margin-top: 0; }
+.band-rule { flex: 1 1 auto; height: 0; border-top: 3px double var(--rule-strong); }
+.band-title { margin: 0; font: 700 9.5pt/1 var(--label-face); letter-spacing: .18em; text-transform: uppercase; white-space: nowrap; }
+
+.notice-strip {
+  margin: 0 0 3mm;
+  padding: 1.8mm 2.5mm;
+  border-left: 2pt solid var(--accent-ink);
+  background: #f1e9db;
+  font: italic 8.4pt/1.4 var(--text-face);
+}
+
+/* ------------------------------------------------------------------ articles */
+
+/* A brief is set as one unbreakable piece, so a headline is never stranded at
+   the foot of a column with its copy in the next one. Anything too tall for a
+   column is split by the browser as a last resort. */
+.brief {
+  break-inside: avoid;
+  margin: 0 0 3mm;
+  padding-bottom: 2.5mm;
+  border-bottom: 1px solid var(--rule);
+}
+.brief > :first-child { margin-top: 0; }
+.brief .credit { margin-bottom: 0; }
+
+.article-head { margin: 0 0 1.5mm; break-after: avoid; }
+.article-head-lead { margin-bottom: 2.5mm; padding-bottom: 2mm; border-bottom: 1px solid var(--rule); text-align: center; }
+.article-head-lead .byline { margin-top: 2mm; }
+.kicker { margin: 0 0 1mm; color: var(--accent-ink); font: 700 6.8pt/1 var(--label-face); letter-spacing: .14em; text-transform: uppercase; }
+.headline { margin: 0; font: 700 13.5pt/1.1 var(--display-face); letter-spacing: -.018em; text-wrap: balance; }
+.headline a { color: inherit; text-decoration: none; }
+.headline a:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
+.headline-lead { font-size: 30pt; line-height: .98; letter-spacing: -.035em; }
+.byline { margin: 1.2mm 0 0; color: var(--ink-faint); font: 6.9pt/1.3 var(--label-face); letter-spacing: .07em; text-transform: uppercase; }
+.byline-time { color: #8b877e; text-transform: none; letter-spacing: .02em; }
+
+.deck { margin: 0 0 2mm; font: italic 11pt/1.4 var(--text-face); color: var(--ink-soft); }
+.standfirst { margin: 0 0 2mm; font: 9.2pt/1.45 var(--text-face); color: var(--ink-soft); }
+.standfirst::first-letter { font-size: 1em; }
+
+.body-copy {
+  margin: 0;
+  font: 8.7pt/1.34 var(--text-face);
+  text-align: justify;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  orphans: 2;
+  widows: 2;
+}
+.body-copy + .body-copy { text-indent: 3.2mm; }
+/* A drop capital opens the lead story, as on a real front page. */
+.article-head + .plate-wide + .deck + .body-copy::first-letter,
+.deck + .body-copy::first-letter {
+  float: left;
+  margin: .6mm 1.2mm 0 0;
+  font: 700 26pt/.74 var(--display-face);
+  color: var(--accent-ink);
+}
+
+.why { margin: 1.5mm 0 0; padding-top: 1.2mm; border-top: 1px solid var(--rule); font: 8.2pt/1.35 var(--text-face); }
+.why-label { color: var(--accent-ink); font: 700 6.6pt var(--label-face); letter-spacing: .1em; text-transform: uppercase; }
+.credit { margin: 1.2mm 0 3mm; font: 7pt/1.3 var(--label-face); }
+.credit a { color: var(--accent-ink); text-underline-offset: 2px; }
+
+/* ------------------------------------------------------------------- plates */
+
+.plate { margin: 0 0 1.8mm; }
+.plate img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border: 1px solid var(--rule);
+  /* Restrained ink, so a page of photographs still reads as a newspaper and
+     prints without soaking a colour cartridge. */
+  filter: saturate(.82) contrast(1.04);
+}
+.plate-wide img { aspect-ratio: 21 / 9; }
+.plate figcaption { margin-top: 1mm; color: var(--ink-faint); font: 6.8pt/1.3 var(--label-face); letter-spacing: .04em; }
+
+/* ---------------------------------------------------------------- occasions */
+
+.occasion { margin: 0 0 2.5mm; padding: 2mm 2.5mm; border: 1px solid var(--rule); background: #f4f0e5; break-inside: avoid; }
+.occasion-kind { margin: 0; color: var(--accent-ink); font: 700 6.6pt/1 var(--label-face); letter-spacing: .13em; text-transform: uppercase; }
+.occasion-name { margin: 1.2mm 0 0; font: 700 11pt/1.15 var(--display-face); letter-spacing: -.02em; }
+.occasion-milestone { margin: 1mm 0 0; color: var(--accent-ink); font: italic 9.5pt/1.3 var(--text-face); }
+.occasion-note { margin: 1.2mm 0 0; color: var(--ink-soft); font: 8.4pt/1.4 var(--text-face); white-space: pre-line; }
+
+/* ------------------------------------------------------- jumps and colophon */
+
+.jump, .jump-from {
+  margin: 1.5mm 0 3mm;
+  color: var(--accent-ink);
+  font: italic 7.6pt/1.3 var(--text-face);
+}
+.jump { text-align: right; }
+.jump-from { margin: 0 0 1.5mm; padding-bottom: 1mm; border-bottom: 1px solid var(--rule); }
+
+.colophon { margin: 4mm 0 0; padding-top: 2mm; border-top: 3px double var(--rule-strong); }
+.colophon p { margin: 0; color: var(--ink-faint); font: italic 7.6pt/1.4 var(--text-face); }
+.colophon-foot { margin-top: 1.5mm; font-style: normal; font-family: var(--label-face); font-size: 6.8pt; letter-spacing: .07em; text-transform: uppercase; }
+
+.press-waiting { padding: 18mm 0; text-align: center; }
+.press-waiting h2 { margin: 2mm 0; font: 700 22pt/1.05 var(--display-face); letter-spacing: -.035em; }
+.press-waiting p { margin: 2mm auto; max-width: 105mm; color: var(--ink-soft); font: 9.5pt/1.45 var(--text-face); }
+
+/* -------------------------------------------------------------------- print */
+
+@page {
+  size: A4 portrait;
+  margin: 0;
+}
+
+@media print {
+  body.paper { background: #fff; }
+  .pressroom, .issue-nav, .skip-link { display: none !important; }
+  .press { padding: 0; }
+  .copy { display: none !important; }
+  .sheets { display: block !important; gap: 0; }
+  .sheet-frame {
+    display: block !important;
+    width: var(--sheet-width);
+    height: var(--sheet-height);
+    break-after: page;
+  }
+  .sheet-frame:last-child { break-after: auto; }
+  .sheet {
+    transform: none;
+    box-shadow: none;
+    background: #fff;
+  }
+  /* Ask the browser for the tints and rules rather than a bare skeleton. */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  /* If the compositor never ran, fall back to printing the unset copy in
+     columns so the page is still usable rather than a single long ribbon. */
+  body:not([data-composed]) .copy {
+    display: block !important;
+    max-width: none;
+    margin: 0;
+    padding: var(--sheet-margin-top) var(--sheet-margin-x) var(--sheet-margin-bottom);
+    columns: var(--columns);
+    column-gap: var(--column-gap);
+    column-rule: 1px solid var(--rule);
+    background: #fff;
+  }
+}
+
+/* ------------------------------------------------------------------- screen */
+
+@media screen {
+  .sheets[data-mode="single"] .sheet-frame { display: none; }
+  .sheets[data-mode="single"] .sheet-frame[data-current] { display: block; }
+}
+
+/* Below this width a scaled A4 sheet is too small to read, so the reading view
+   is the sensible default; the pager is hidden because there is nothing to page
+   through until the reader switches back. */
+@media screen and (max-width: 700px) {
+  .pressroom-pager { display: none !important; }
+  .issue-nav { font-size: .7rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { scroll-behavior: auto !important; }
+}

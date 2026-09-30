@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -17,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/home-news/home-news/internal/domain"
+	"github.com/home-news/home-news/internal/safehttp"
 	"github.com/mmcdole/gofeed"
 	"golang.org/x/net/html"
 )
@@ -39,46 +39,14 @@ type Result struct {
 }
 
 func New(timeout time.Duration, maxText, maxItems int) *Poller {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-		host, port, err := net.SplitHostPort(address)
-		if err != nil {
-			return nil, err
-		}
-		ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-		if err != nil {
-			return nil, err
-		}
-		var last error
-		for _, candidate := range ips {
-			if !isPublicIP(candidate.IP) {
-				continue
-			}
-			conn, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, network, net.JoinHostPort(candidate.IP.String(), port))
-			if err == nil {
-				return conn, nil
-			}
-			last = err
-		}
-		if last != nil {
-			return nil, last
-		}
-		return nil, errors.New("feed host resolved only to non-public addresses")
-	}
-	client := &http.Client{Timeout: timeout, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-		if len(via) >= 5 {
-			return errors.New("too many redirects")
-		}
-		return validatePublicURL(req.URL)
-	}}
-	return &Poller{client: client, maxText: maxText, maxItems: maxItems}
+	return &Poller{client: safehttp.NewClient(timeout), maxText: maxText, maxItems: maxItems}
 }
 func (p *Poller) Poll(ctx context.Context, feed domain.Feed, etag, lastModified string) (Result, error) {
 	u, err := url.Parse(feed.URL)
 	if err != nil {
 		return Result{}, err
 	}
-	if err = validatePublicURL(u); err != nil {
+	if err = safehttp.ValidatePublicURL(u); err != nil {
 		return Result{}, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, feed.URL, nil)
@@ -146,7 +114,7 @@ func (p *Poller) Poll(ctx context.Context, feed domain.Feed, etag, lastModified 
 		if item.Author != nil {
 			author = item.Author.Name
 		}
-		items = append(items, domain.FeedItem{URL: NormalizeURL(link), Title: title, Author: author, PublishedAt: published, Text: text, Truncated: truncated})
+		items = append(items, domain.FeedItem{URL: NormalizeURL(link), Title: title, Author: author, PublishedAt: published, Text: text, Truncated: truncated, ImageURL: ItemImageURL(item)})
 	}
 	result.Items = items
 	return result, nil
@@ -225,47 +193,6 @@ func clean(s string) string {
 	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
-func validatePublicURL(u *url.URL) error {
-	if u == nil || (u.Scheme != "https" && u.Scheme != "http") {
-		return errors.New("only http and https feed URLs are allowed")
-	}
-	host := u.Hostname()
-	if host == "" {
-		return errors.New("feed URL has no hostname")
-	}
-	ips, err := net.LookupIP(host)
-	if err != nil {
-		return fmt.Errorf("resolve feed host: %w", err)
-	}
-	for _, ip := range ips {
-		if !isPublicIP(ip) {
-			return fmt.Errorf("feed host resolves to a non-public address")
-		}
-	}
-	return nil
-}
-func isPublicIP(ip net.IP) bool {
-	if ip == nil || ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.IsMulticast() {
-		return false
-	}
-	if v4 := ip.To4(); v4 != nil {
-		if !v4.IsGlobalUnicast() || v4[0] == 0 || v4[0] >= 224 || v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127 || v4[0] == 198 && (v4[1] == 18 || v4[1] == 19) {
-			return false
-		}
-		for _, cidr := range []string{"192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "198.51.100.0/24", "203.0.113.0/24"} {
-			_, block, _ := net.ParseCIDR(cidr)
-			if block.Contains(v4) {
-				return false
-			}
-		}
-		return true
-	}
-	if !ip.IsGlobalUnicast() {
-		return false
-	}
-	_, documentation, _ := net.ParseCIDR("2001:db8::/32")
-	return !documentation.Contains(ip)
-}
 func SortItems(items []domain.FeedItem) {
 	sort.SliceStable(items, func(i, j int) bool { return items[i].PublishedAt.After(items[j].PublishedAt) })
 }

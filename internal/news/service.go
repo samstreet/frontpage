@@ -18,6 +18,7 @@ import (
 	"github.com/home-news/home-news/internal/domain"
 	"github.com/home-news/home-news/internal/feeds"
 	"github.com/home-news/home-news/internal/llm"
+	"github.com/home-news/home-news/internal/media"
 	"github.com/home-news/home-news/internal/store"
 )
 
@@ -25,6 +26,7 @@ type Service struct {
 	cfg       config.Config
 	db        *store.Store
 	poller    *feeds.Poller
+	images    *media.Fetcher
 	model     *llm.Client
 	log       *slog.Logger
 	pollMu    sync.Mutex
@@ -33,7 +35,7 @@ type Service struct {
 }
 
 func New(cfg config.Config, db *store.Store, model *llm.Client, log *slog.Logger) *Service {
-	return &Service{cfg: cfg, db: db, poller: feeds.New(25*time.Second, cfg.MaxItemChars, cfg.MaxItemsPerFeed), model: model, log: log}
+	return &Service{cfg: cfg, db: db, poller: feeds.New(25*time.Second, cfg.MaxItemChars, cfg.MaxItemsPerFeed), images: media.NewFetcher(20 * time.Second), model: model, log: log}
 }
 func (s *Service) Config() config.Config { return s.cfg }
 
@@ -67,7 +69,7 @@ func (s *Service) Poll(ctx context.Context) error {
 			}
 			topics := s.matchTopics(f, item)
 			id := feeds.StableID(f.ID, item.URL, item.Title, item.PublishedAt)
-			story := domain.Story{ID: id, FeedID: f.ID, FeedName: f.Name, URL: item.URL, Title: item.Title, Author: item.Author, PublishedAt: item.PublishedAt, SourceText: item.Text, Truncated: item.Truncated, Topics: topics}
+			story := domain.Story{ID: id, FeedID: f.ID, FeedName: f.Name, URL: item.URL, Title: item.Title, Author: item.Author, PublishedAt: item.PublishedAt, SourceText: item.Text, Truncated: item.Truncated, Topics: topics, ImageURL: item.ImageURL}
 			if _, _, e := s.db.UpsertStory(ctx, story); e != nil {
 				s.log.Error("story ingest failed", "feed_id", f.ID, "error", e)
 			}
@@ -78,6 +80,9 @@ func (s *Service) Poll(ctx context.Context) error {
 	}
 	if err := s.ProcessSummaries(ctx, 20); err != nil {
 		s.log.Warn("summary batch incomplete", "error", err)
+	}
+	if err := s.ProcessImages(ctx, imageBatchSize); err != nil {
+		s.log.Warn("image batch incomplete", "error", err)
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("%d feed(s) failed: %s", len(errs), strings.Join(errs, ", "))
@@ -105,6 +110,47 @@ func (s *Service) matchTopics(feed domain.Feed, item domain.FeedItem) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// imageBatchSize bounds how many photographs a single poll downloads, so a
+// backlog is worked through over several cycles instead of stalling one.
+const imageBatchSize = 12
+
+// ProcessImages downloads queued photographs, re-encodes them and stores them
+// locally. Failures are recorded and retried a bounded number of times; a
+// story without a usable photograph simply prints without one.
+func (s *Service) ProcessImages(ctx context.Context, limit int) error {
+	if !s.cfg.FetchImages {
+		return nil
+	}
+	stories, err := s.db.StoriesNeedingImages(ctx, limit)
+	if err != nil {
+		return err
+	}
+	var failures int
+	for _, story := range stories {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		image, err := s.images.Fetch(ctx, story.ImageURL)
+		if err != nil {
+			if markErr := s.db.MarkImageUnavailable(ctx, story.ID); markErr != nil {
+				s.log.Error("image status update failed", "story_id", story.ID, "error", markErr)
+			}
+			s.log.Debug("story image unavailable", "story_id", story.ID, "error", err)
+			failures++
+			continue
+		}
+		image.StoryID = story.ID
+		if err := s.db.SaveStoryImage(ctx, image); err != nil {
+			s.log.Error("image save failed", "story_id", story.ID, "error", err)
+			failures++
+		}
+	}
+	if failures > 0 {
+		return fmt.Errorf("%d of %d image(s) could not be stored", failures, len(stories))
+	}
+	return nil
 }
 
 func (s *Service) ProcessSummaries(ctx context.Context, limit int) error {
@@ -444,12 +490,20 @@ func (s *Service) Status(ctx context.Context) domain.Status {
 		out.Feeds[i].Feed.URL = ""
 	}
 	out.PendingSummaries, _ = s.db.PendingCount(ctx)
+	out.ImagesStored, out.ImagesPending, _ = s.db.ImageCounts(ctx)
 	out.LastEditionDate, out.EditionStatus, _ = s.db.LatestEditionDate(ctx)
 	return out
 }
 func (s *Service) Edition(ctx context.Context, date string) (domain.Edition, error) {
 	return s.db.GetEdition(ctx, date)
 }
+
+// EditionDates returns the dates of recent editions, newest first, without
+// loading their stories. The newspaper uses it to link one issue to the next.
+func (s *Service) EditionDates(ctx context.Context, limit int) ([]string, error) {
+	return s.db.EditionDates(ctx, limit)
+}
+
 func (s *Service) Editions(ctx context.Context) ([]domain.Edition, error) {
 	dates, err := s.db.EditionDates(ctx, 30)
 	if err != nil {
@@ -473,6 +527,12 @@ func (s *Service) StoriesFiltered(ctx context.Context, filter store.StoryFilter,
 func (s *Service) CountStories(ctx context.Context, filter store.StoryFilter) (int, error) {
 	return s.db.CountStories(ctx, filter)
 }
+
+// StoryImage returns the locally stored photograph for a story.
+func (s *Service) StoryImage(ctx context.Context, id string) (domain.StoryImage, error) {
+	return s.db.StoryImage(ctx, id)
+}
+
 func (s *Service) Story(ctx context.Context, id string) (domain.Story, error) {
 	return s.db.GetStory(ctx, id)
 }

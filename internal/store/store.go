@@ -175,7 +175,7 @@ func (s *Store) UpsertStory(ctx context.Context, story domain.Story) (string, bo
 		return "", false, err
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO stories(id,feed_id,url,title,author,published_at,first_seen_at,source_text,truncated,topics,content_hash) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(feed_id,url) DO UPDATE SET title=CASE WHEN excluded.title='' THEN stories.title ELSE excluded.title END,author=CASE WHEN excluded.author='' THEN stories.author ELSE excluded.author END,source_text=CASE WHEN excluded.source_text='' THEN stories.source_text ELSE excluded.source_text END,topics=excluded.topics,content_hash=excluded.content_hash,truncated=excluded.truncated`, story.ID, story.FeedID, story.URL, story.Title, story.Author, formatTimestamp(story.PublishedAt), now, story.SourceText, story.Truncated, string(topics), contentHashHex)
+	_, err = tx.ExecContext(ctx, `INSERT INTO stories(id,feed_id,url,title,author,published_at,first_seen_at,source_text,truncated,topics,content_hash,image_url,image_status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,CASE WHEN ?='' THEN 'none' ELSE 'pending' END) ON CONFLICT(feed_id,url) DO UPDATE SET title=CASE WHEN excluded.title='' THEN stories.title ELSE excluded.title END,author=CASE WHEN excluded.author='' THEN stories.author ELSE excluded.author END,source_text=CASE WHEN excluded.source_text='' THEN stories.source_text ELSE excluded.source_text END,topics=excluded.topics,content_hash=excluded.content_hash,truncated=excluded.truncated,image_url=CASE WHEN excluded.image_url='' THEN stories.image_url ELSE excluded.image_url END,image_status=CASE WHEN excluded.image_url<>'' AND excluded.image_url<>stories.image_url THEN 'pending' ELSE stories.image_status END,image_attempts=CASE WHEN excluded.image_url<>'' AND excluded.image_url<>stories.image_url THEN 0 ELSE stories.image_attempts END`, story.ID, story.FeedID, story.URL, story.Title, story.Author, formatTimestamp(story.PublishedAt), now, story.SourceText, story.Truncated, string(topics), contentHashHex, story.ImageURL, story.ImageURL)
 	if err != nil {
 		return "", false, err
 	}
@@ -193,6 +193,9 @@ func (s *Store) UpsertStory(ctx context.Context, story domain.Story) (string, bo
 				return "", false, err
 			}
 		}
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM story_images WHERE story_id IN (SELECT id FROM stories WHERE id=? AND image_status='pending')`, id); err != nil {
+		return "", false, err
 	}
 	var existingSummary string
 	_ = tx.QueryRowContext(ctx, `SELECT summary FROM summaries WHERE story_id=?`, id).Scan(&existingSummary)
@@ -275,23 +278,93 @@ func (s *Store) MarkSummaryUnavailable(ctx context.Context, id string) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE stories SET summary_status='unavailable' WHERE id=?`, id)
 	return err
 }
+
+// maxImageAttempts limits retries for an image that will not download.
+const maxImageAttempts = 3
+
+// StoriesNeedingImages returns stories that advertise a photograph which has
+// not been downloaded yet, newest first so today's edition is illustrated
+// before the backlog.
+func (s *Store) StoriesNeedingImages(ctx context.Context, limit int) ([]domain.Story, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT s.id,s.image_url FROM stories s WHERE s.image_url<>'' AND (s.image_status='pending' OR (s.image_status='failed' AND s.image_attempts<?)) ORDER BY s.published_at DESC LIMIT ?`, maxImageAttempts, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []domain.Story
+	for rows.Next() {
+		var x domain.Story
+		if err := rows.Scan(&x.ID, &x.ImageURL); err != nil {
+			return nil, err
+		}
+		out = append(out, x)
+	}
+	return out, rows.Err()
+}
+
+// SaveStoryImage stores re-encoded image bytes for a story.
+func (s *Store) SaveStoryImage(ctx context.Context, image domain.StoryImage) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO story_images(story_id,content_type,width,height,source_url,fetched_at,bytes) VALUES(?,?,?,?,?,?,?) ON CONFLICT(story_id) DO UPDATE SET content_type=excluded.content_type,width=excluded.width,height=excluded.height,source_url=excluded.source_url,fetched_at=excluded.fetched_at,bytes=excluded.bytes`, image.StoryID, image.ContentType, image.Width, image.Height, image.SourceURL, formatTimestamp(image.FetchedAt), image.Bytes); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE stories SET image_status='stored' WHERE id=?`, image.StoryID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// MarkImageUnavailable records a failed download so it is retried a bounded
+// number of times and then left alone.
+func (s *Store) MarkImageUnavailable(ctx context.Context, storyID string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE stories SET image_status='failed',image_attempts=image_attempts+1 WHERE id=?`, storyID)
+	return err
+}
+
+// StoryImage returns the stored photograph for a story.
+func (s *Store) StoryImage(ctx context.Context, storyID string) (domain.StoryImage, error) {
+	var out domain.StoryImage
+	var fetched string
+	err := s.db.QueryRowContext(ctx, `SELECT story_id,content_type,width,height,source_url,fetched_at,bytes FROM story_images WHERE story_id=?`, storyID).Scan(&out.StoryID, &out.ContentType, &out.Width, &out.Height, &out.SourceURL, &fetched, &out.Bytes)
+	if err != nil {
+		return out, err
+	}
+	out.FetchedAt, _ = time.Parse(time.RFC3339Nano, fetched)
+	return out, nil
+}
+
+// ImageCounts returns how many photographs are stored and how many are queued.
+func (s *Store) ImageCounts(ctx context.Context) (int, int, error) {
+	var stored, pending int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM story_images`).Scan(&stored); err != nil {
+		return 0, 0, err
+	}
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stories WHERE image_url<>'' AND (image_status='pending' OR (image_status='failed' AND image_attempts<?))`, maxImageAttempts).Scan(&pending)
+	return stored, pending, err
+}
+
 func (s *Store) PendingCount(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM stories WHERE summary_status='pending' OR (summary_status='failed' AND summary_attempts<5 AND (retry_after IS NULL OR retry_after<=?))`, formatTimestamp(time.Now())).Scan(&n)
 	return n, err
 }
 
-const storySelect = `SELECT s.id,s.feed_id,f.name,s.url,s.title,s.author,s.published_at,s.first_seen_at,s.source_text,s.truncated,s.topics,s.summary_status,z.headline,z.summary,z.why_matters,z.topics,z.model,z.prompt_version,z.created_at FROM stories s JOIN feeds f ON f.id=s.feed_id LEFT JOIN summaries z ON z.story_id=s.id`
+const storySelect = `SELECT s.id,s.feed_id,f.name,s.url,s.title,s.author,s.published_at,s.first_seen_at,s.source_text,s.truncated,s.topics,s.summary_status,s.image_url,m.story_id IS NOT NULL,z.headline,z.summary,z.why_matters,z.topics,z.model,z.prompt_version,z.created_at FROM stories s JOIN feeds f ON f.id=s.feed_id LEFT JOIN summaries z ON z.story_id=s.id LEFT JOIN story_images m ON m.story_id=s.id`
 
 func scanStory(row interface{ Scan(...any) error }) (domain.Story, error) {
 	var x domain.Story
 	var pub, first, topics string
-	var tr int
+	var tr, hasImage int
 	var h, summary, why, st, model, version, created sql.NullString
-	err := row.Scan(&x.ID, &x.FeedID, &x.FeedName, &x.URL, &x.Title, &x.Author, &pub, &first, &x.SourceText, &tr, &topics, &x.SummaryStatus, &h, &summary, &why, &st, &model, &version, &created)
+	err := row.Scan(&x.ID, &x.FeedID, &x.FeedName, &x.URL, &x.Title, &x.Author, &pub, &first, &x.SourceText, &tr, &topics, &x.SummaryStatus, &x.ImageURL, &hasImage, &h, &summary, &why, &st, &model, &version, &created)
 	if err != nil {
 		return x, err
 	}
+	x.HasImage = hasImage != 0
 	x.PublishedAt, _ = time.Parse(time.RFC3339Nano, pub)
 	x.FirstSeenAt, _ = time.Parse(time.RFC3339Nano, first)
 	x.Truncated = tr != 0
@@ -557,6 +630,9 @@ func (s *Store) Cleanup(ctx context.Context, storyDays, chatDays int) error {
 	storyCut := formatTimestamp(time.Now().AddDate(0, 0, -storyDays))
 	chatCut := formatTimestamp(time.Now().AddDate(0, 0, -chatDays))
 	if _, err = tx.ExecContext(ctx, `DELETE FROM stories_fts WHERE story_id IN (SELECT id FROM stories WHERE first_seen_at<?)`, storyCut); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `DELETE FROM story_images WHERE story_id IN (SELECT id FROM stories WHERE first_seen_at<?)`, storyCut); err != nil {
 		return err
 	}
 	if _, err = tx.ExecContext(ctx, `DELETE FROM stories WHERE first_seen_at<?`, storyCut); err != nil {

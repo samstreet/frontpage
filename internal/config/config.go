@@ -30,6 +30,7 @@ type Config struct {
 	MaxItemChars      int
 	ChatResultLimit   int
 	ChatContextChars  int
+	FetchImages       bool
 	Source            domain.SourceConfig
 	Location          *time.Location
 }
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 		RetentionDays: 90, ChatRetentionDays: 30, OllamaURL: "http://ollama:11434",
 		OllamaModel: "qwen3:4b", OllamaTimeout: 5 * time.Minute, LogLevel: "info",
 		MaxItemsPerFeed: 50, MaxItemChars: 12000, ChatResultLimit: 8, ChatContextChars: 12000,
+		FetchImages: true,
 	}
 	setString(&c.Addr, "APP_ADDR")
 	setString(&c.DataDir, "APP_DATA_DIR")
@@ -54,6 +56,9 @@ func Load() (Config, error) {
 		return c, err
 	}
 	if err := setDuration(&c.OllamaTimeout, "OLLAMA_REQUEST_TIMEOUT"); err != nil {
+		return c, err
+	}
+	if err := setBool(&c.FetchImages, "APP_FETCH_IMAGES"); err != nil {
 		return c, err
 	}
 	for key, target := range map[string]*int{
@@ -185,6 +190,18 @@ func setString(target *string, key string) {
 	if v := os.Getenv(key); v != "" {
 		*target = v
 	}
+}
+func setBool(target *bool, key string) error {
+	v := os.Getenv(key)
+	if v == "" {
+		return nil
+	}
+	parsed, err := strconv.ParseBool(v)
+	if err != nil {
+		return fmt.Errorf("%s must be true or false: %w", key, err)
+	}
+	*target = parsed
+	return nil
 }
 func setDuration(target *time.Duration, key string) error {
 	if v := os.Getenv(key); v != "" {

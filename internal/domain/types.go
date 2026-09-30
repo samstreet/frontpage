@@ -37,6 +37,20 @@ type Story struct {
 	Topics        []string  `json:"topics"`
 	SummaryStatus string    `json:"summary_status"`
 	Summary       *Summary  `json:"summary,omitempty"`
+	ImageURL      string    `json:"image_url,omitempty"`
+	HasImage      bool      `json:"has_image"`
+}
+
+// StoryImage is a publisher photograph downloaded and re-encoded for local
+// serving, so pages never load anything from a third party.
+type StoryImage struct {
+	StoryID     string    `json:"story_id"`
+	ContentType string    `json:"content_type"`
+	Width       int       `json:"width"`
+	Height      int       `json:"height"`
+	SourceURL   string    `json:"source_url"`
+	FetchedAt   time.Time `json:"fetched_at"`
+	Bytes       []byte    `json:"-"`
 }
 
 type StorySummary struct {
@@ -93,6 +107,8 @@ type Status struct {
 	OllamaAvailable  bool         `json:"ollama_available"`
 	Feeds            []FeedStatus `json:"feeds"`
 	PendingSummaries int          `json:"pending_summaries"`
+	ImagesStored     int          `json:"images_stored"`
+	ImagesPending    int          `json:"images_pending"`
 	LastEditionDate  string       `json:"last_edition_date,omitempty"`
 	EditionStatus    string       `json:"edition_status,omitempty"`
 }
@@ -115,4 +131,5 @@ type FeedItem struct {
 	PublishedAt time.Time
 	Text        string
 	Truncated   bool
+	ImageURL    string
 }

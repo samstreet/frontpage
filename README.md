@@ -1,6 +1,6 @@
 # Home News
 
-Home News collects configured RSS/Atom/JSON feeds, creates locally generated summaries and newspaper editions with Ollama, and serves the archive and newspaper from one Go application. The application, database, model inference, and UI run on your server. Feed polling requires outbound internet access; no public inbound access or router port forwarding is needed.
+Home News collects configured RSS/Atom/JSON feeds, creates locally generated summaries and newspaper editions with Ollama, and serves the archive and newspaper from one Go application. The daily edition is set as an actual newspaper: a nameplate, columned copy, photographs and numbered pages that you can turn on screen or print to A4. The application, database, model inference, and UI run on your server. Feed polling requires outbound internet access; no public inbound access or router port forwarding is needed.
 
 ## Requirements
 
@@ -62,6 +62,7 @@ Compose settings can be placed in `.env` next to the compose file's project root
 - `HOME_NEWS_PORT`: host port, default `8091`.
 - `OLLAMA_MODEL`: local model name, default `qwen3:4b`.
 - `APP_TIMEZONE`, `APP_POLL_INTERVAL`, `APP_DAILY_EDITION_TIME`, `APP_RETENTION_DAYS`, `OLLAMA_REQUEST_TIMEOUT`, and `APP_LOG_LEVEL`: optional runtime settings.
+- `APP_FETCH_IMAGES`: `true` (default) or `false`. Set `false` to stop downloading photographs entirely; editions are then set without pictures.
 
 `config/feeds.yaml` is mounted read-only. Edit it and recreate/restart the app to apply changes:
 
@@ -104,6 +105,33 @@ curl -X POST http://192.168.1.69:8091/api/v1/admin/edition
 ```
 
 Use `events: []` to leave the section disabled.
+
+## Reading and printing the newspaper
+
+The front page opens as a stack of A4 sheets. The controls above the paper are:
+
+- **‹ / ›** and the page count: turn pages. The arrow keys, `Page Up`/`Page Down` and `Home`/`End` do the same.
+- **Reading view**: abandon the pages and scroll one plain column instead. This is the default on a phone, where a whole A4 sheet is too small to read; switch back with **Page view**.
+- **Print / Save as PDF**: opens the browser's print dialogue.
+
+Pages are composed in millimetres against A4, so what is on the screen is what comes out of the printer, page break for page break. Print with margins set to **None** (the sheet carries its own margins) and background graphics enabled, which is what "Save as PDF" in Chrome and Firefox does by default. The result is one PDF page per sheet, with running folios, section bands, an "Inside today" contents box with real page numbers, and "Continued on page N" lines where an article runs over.
+
+The page composer is JavaScript. Without it the edition still renders as a single readable column, and printing falls back to a plain columned layout — the copy and the photographs are all there, only the page breaks are the browser's choice rather than the paper's.
+
+## Photographs
+
+Home News looks for a lead photograph on every story, checking the feed item's image element, any image enclosure, Media RSS `media:content` and `media:thumbnail`, and finally any `<img>` in the item's own HTML. Tracking pixels, spacers and formats that cannot be decoded are skipped.
+
+A candidate is then **downloaded by the server, decoded, resampled to at most 1400px, flattened onto white and re-encoded as JPEG**, and the result is stored in the application database. Pages reference `/media/<story id>` on this server only:
+
+- Your browser never contacts a publisher's CDN, so reading the paper does not tell anyone what you read.
+- The content security policy stays at `img-src 'self' data:`; nothing was loosened to make pictures work.
+- Photographs are present in the PDF whether or not you are online when you print.
+- Downloads use the same guarded HTTP client as feed polling, which refuses private, loopback and link-local addresses at both request and dial time.
+
+JPEG, PNG and GIF are decoded. **WebP is not** — it is absent from the Go standard library, and a WebP-only story is simply set without a picture rather than adding a third-party decoder. A download is retried at most three times and then left alone.
+
+Photographs are fetched in batches of twelve per poll, so a large backlog is worked through over several cycles rather than stalling one. Stored images are deleted with their stories under `APP_RETENTION_DAYS`. Budget roughly 150–400 KB per photograph when sizing the data volume. **Sources & status** reports how many photographs are stored and how many are still queued. Set `APP_FETCH_IMAGES=false` to turn the whole pipeline off.
 
 ## Operations
 
