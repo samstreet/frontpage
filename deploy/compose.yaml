@@ -25,7 +25,12 @@ services:
       - "${HOME_NEWS_LAN_IP:-192.168.1.69}:${HOME_NEWS_PORT:-8091}:8080"
     volumes:
       - home_news_data:/data
-      - ../config/feeds.yaml:/config/feeds.yaml:ro
+      - type: bind
+        source: ../config/feeds.yaml
+        target: /config/feeds.yaml
+        read_only: true
+        bind:
+          create_host_path: false
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
